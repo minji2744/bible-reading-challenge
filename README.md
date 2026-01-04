@@ -4,7 +4,7 @@ A web application for tracking daily Bible reading progress, competing with grou
 
 ## Features
 
-1. **User Authentication**: Login with email, password, and group name
+1. **User Authentication**: Login with name, password, and group name
 2. **Reading Log**: Select Bible chapters and log how many chapters you've read
 3. **Group Progress**: View reading progress of members in your group
 4. **All Groups Leaderboard**: See how all groups are performing
@@ -135,7 +135,7 @@ bible-reading-tracker/
 ## Features Breakdown
 
 ### 1. Login Page
-- Email and password authentication
+- Name and password authentication
 - Group name selection and validation
 - Verifies user belongs to selected group
 

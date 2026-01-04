@@ -1,15 +1,15 @@
 -- Create groups table
 CREATE TABLE IF NOT EXISTS public.groups (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
+  group_name TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create profiles table that references auth.users
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  email TEXT NOT NULL,
-  full_name TEXT NOT NULL,
+  user_id TEXT NOT NULL UNIQUE, -- User's identifier (what they input)
+  nickname TEXT, -- Display name shown on dashboard
   group_id UUID NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS public.readings (
   chapters_read INTEGER NOT NULL CHECK (chapters_read > 0),
   reading_date DATE NOT NULL DEFAULT CURRENT_DATE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  book TEXT,
+  start_chapter INTEGER,
   UNIQUE(user_id, reading_date)
 );
 
@@ -65,12 +67,12 @@ CREATE POLICY "readings_delete_own"
   USING (auth.uid() = user_id);
 
 -- Insert 5 default groups
-INSERT INTO public.groups (name) VALUES
-  ('Group 1'),
-  ('Group 2'),
-  ('Group 3'),
-  ('Group 4'),
-  ('Group 5')
+INSERT INTO public.groups (group_name) VALUES
+  ('1조'),
+  ('2조'),
+  ('3조'),
+  ('4조'),
+  ('5조')
 ON CONFLICT DO NOTHING;
 
 -- Create function to handle new user signup
@@ -78,19 +80,21 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
   v_group_id UUID;
-  v_full_name TEXT;
+  v_user_id TEXT;
+  v_nickname TEXT;
 BEGIN
   -- Extract metadata from user
-  v_full_name := COALESCE(NEW.raw_user_meta_data->>'full_name', '');
+  v_user_id := COALESCE(NEW.raw_user_meta_data->>'user_id', '');
+  v_nickname := COALESCE(NEW.raw_user_meta_data->>'nickname', '');
   v_group_id := (NEW.raw_user_meta_data->>'group_id')::UUID;
   
   -- Only create profile if we have the required data
-  IF v_full_name IS NOT NULL AND v_full_name != '' AND v_group_id IS NOT NULL THEN
-    INSERT INTO public.profiles (id, email, full_name, group_id)
+  IF v_user_id IS NOT NULL AND v_user_id != '' AND v_group_id IS NOT NULL THEN
+    INSERT INTO public.profiles (id, user_id, nickname, group_id)
     VALUES (
       NEW.id,
-      NEW.email,
-      v_full_name,
+      v_user_id,
+      v_nickname,
       v_group_id
     )
     ON CONFLICT (id) DO NOTHING;

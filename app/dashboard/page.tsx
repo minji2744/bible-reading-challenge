@@ -13,7 +13,7 @@ export default async function DashboardPage() {
   // 사용자 프로필 가져오기
   const { data: profile } = await supabase
     .from("profiles")
-    .select("*, groups(name)")
+    .select("*, groups(group_name)")
     .eq("id", data.user.id)
     .single()
 

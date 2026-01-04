@@ -7,101 +7,27 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState, useEffect } from "react"
+import { useState } from "react"
+
+const GROUP_NAMES = ["1조", "2조", "3조", "4조", "5조"]
 
 export default function SignUpPage() {
-  const [email, setEmail] = useState("")
+  const [userId, setUserId] = useState("")
   const [password, setPassword] = useState("")
-  const [fullName, setFullName] = useState("")
-  const [selectedGroupName, setSelectedGroupName] = useState("")
-  const [groupMap, setGroupMap] = useState<Map<string, string>>(new Map()) // Map group name to group ID
+  const [nickname, setNickname] = useState("")
+  const [groupName, setGroupName] = useState("")
   const [error, setError] = useState<string | null>(null)
-  const [groupError, setGroupError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [isLoadingGroups, setIsLoadingGroups] = useState(true)
   const router = useRouter()
-
-  // Predefined groups that should always be available
-  const predefinedGroups = ["Group 1", "Group 2", "Group 3", "Group 4", "Group 5"]
-
-  useEffect(() => {
-    const fetchOrCreateGroups = async () => {
-      const supabase = createClient()
-      const newGroupMap = new Map<string, string>()
-      
-      try {
-        // Try to fetch existing groups
-        const { data, error: fetchError } = await supabase
-          .from("groups")
-          .select("id, name")
-          .order("name", { ascending: true })
-
-        // Check if table doesn't exist
-        if (fetchError) {
-          const isTableNotFound = fetchError.message?.includes("schema cache") || 
-                                  fetchError.message?.includes("does not exist") ||
-                                  fetchError.code === "PGRST116"
-          
-          if (isTableNotFound) {
-            setGroupError("데이터베이스 테이블이 설정되지 않았습니다. 먼저 Supabase SQL Editor에서 SQL 스키마 스크립트를 실행해주세요.")
-            setIsLoadingGroups(false)
-            return
-          }
-          console.error("Error fetching groups:", fetchError)
-        }
-
-        // Build map of existing groups
-        if (data && data.length > 0) {
-          data.forEach((group) => {
-            const groupName = group.name.trim()
-            if (predefinedGroups.includes(groupName)) {
-              newGroupMap.set(groupName, group.id)
-            }
-          })
-        }
-
-        // For any missing groups, try to create them
-        for (const groupName of predefinedGroups) {
-          if (!newGroupMap.has(groupName)) {
-            const { data: newGroup, error: createError } = await supabase
-              .from("groups")
-              .insert({ name: groupName })
-              .select("id, name")
-              .single()
-
-            if (!createError && newGroup) {
-              newGroupMap.set(newGroup.name, newGroup.id)
-            } else if (createError) {
-              const isTableNotFound = createError.message?.includes("schema cache") || 
-                                      createError.message?.includes("does not exist") ||
-                                      createError.code === "PGRST116"
-              
-              if (isTableNotFound) {
-                setGroupError("데이터베이스 테이블이 설정되지 않았습니다. 먼저 Supabase SQL Editor에서 SQL 스키마 스크립트를 실행해주세요.")
-                setIsLoadingGroups(false)
-                return
-              }
-              console.error(`Error creating ${groupName}:`, createError)
-            }
-          }
-        }
-
-        setGroupMap(newGroupMap)
-      } catch (err) {
-        console.error("Error in fetchOrCreateGroups:", err)
-        const errorMessage = err instanceof Error ? err.message : String(err)
-        if (errorMessage.includes("schema cache") || errorMessage.includes("does not exist")) {
-          setGroupError("데이터베이스 테이블이 설정되지 않았습니다. 먼저 Supabase SQL Editor에서 SQL 스키마 스크립트를 실행해주세요.")
-        }
-      } finally {
-        setIsLoadingGroups(false)
-      }
-    }
-    fetchOrCreateGroups()
-  }, [])
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -109,142 +35,104 @@ export default function SignUpPage() {
     setIsLoading(true)
     setError(null)
 
-    if (!selectedGroupName) {
-      setError("그룹을 선택해주세요")
+    if (!userId.trim()) {
+      setError("ID를 입력해주세요")
+      setIsLoading(false)
+      return
+    }
+
+    if (!nickname.trim()) {
+      setError("닉네임을 입력해주세요")
+      setIsLoading(false)
+      return
+    }
+
+    if (!groupName.trim()) {
+      setError("그룹명을 선택해주세요")
       setIsLoading(false)
       return
     }
 
     try {
-      // Get or create the group ID
-      let groupId: string | undefined = groupMap.get(selectedGroupName)
-      
-      // If group doesn't exist in map, try to find or create it
-      if (!groupId) {
-        // Try to find existing group
-        const { data: existingGroup, error: findError } = await supabase
+      // Find or create the group
+      let { data: group, error: groupError } = await supabase
+        .from("groups")
+        .select("id")
+        .eq("group_name", groupName.trim())
+        .single()
+
+      if (groupError || !group) {
+        // Try to create the group if it doesn't exist
+        const { data: newGroup, error: createError } = await supabase
           .from("groups")
+          .insert({ group_name: groupName.trim() })
           .select("id")
-          .eq("name", selectedGroupName)
           .single()
 
-        // Check if table doesn't exist
-        if (findError) {
-          const isTableNotFound = findError.message?.includes("schema cache") || 
-                                  findError.message?.includes("does not exist") ||
-                                  findError.code === "PGRST116"
-          
-          if (isTableNotFound) {
-            throw new Error("데이터베이스 테이블이 설정되지 않았습니다. 먼저 Supabase SQL Editor에서 SQL 스키마 스크립트(scripts/001_create_schema.sql)를 실행해주세요. 지침은 README.md를 참조하세요.")
-          }
+        if (createError || !newGroup) {
+          throw new Error(`그룹 생성 실패: ${createError?.message || "알 수 없는 오류"}`)
         }
-
-        if (existingGroup?.id) {
-          const foundGroupId = existingGroup.id
-          groupId = foundGroupId
-          const updatedMap = new Map(groupMap)
-          updatedMap.set(selectedGroupName, foundGroupId)
-          setGroupMap(updatedMap)
-        } else {
-          // Create the group if it doesn't exist
-          const { data: newGroup, error: createError } = await supabase
-            .from("groups")
-            .insert({ name: selectedGroupName })
-            .select("id")
-            .single()
-
-          if (createError || !newGroup?.id) {
-            const isTableNotFound = createError?.message?.includes("schema cache") || 
-                                    createError?.message?.includes("does not exist") ||
-                                    createError?.code === "PGRST116"
-            
-            if (isTableNotFound) {
-              throw new Error("데이터베이스 테이블이 설정되지 않았습니다. 먼저 Supabase SQL Editor에서 SQL 스키마 스크립트(scripts/001_create_schema.sql)를 실행해주세요. 지침은 README.md를 참조하세요.")
-            }
-            throw new Error(`그룹 생성 실패: ${createError?.message || "알 수 없는 오류"}`)
-          }
-          
-          const createdGroupId = newGroup.id
-          groupId = createdGroupId
-          const updatedMap = new Map(groupMap)
-          updatedMap.set(selectedGroupName, createdGroupId)
-          setGroupMap(updatedMap)
-        }
+        group = newGroup
       }
 
-      if (!groupId) {
-        throw new Error("그룹 ID를 확인할 수 없습니다")
-      }
+      // Generate email identifier for Supabase auth (requires email format)
+      const email = `${userId.trim().toLowerCase()}@challenge.local`
 
+      // Sign up user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/dashboard`,
+          emailRedirectTo: `${window.location.origin}/dashboard`,
           data: {
-            full_name: fullName,
-            group_id: groupId,
+            user_id: userId.trim(),
+            nickname: nickname.trim(),
+            group_id: group.id,
           },
         },
       })
 
       if (authError) throw authError
 
+      // Wait for trigger to create profile
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      // Verify profile was created
       if (authData.user) {
-        // Wait a bit for the trigger to potentially create the profile
-        await new Promise(resolve => setTimeout(resolve, 500))
-        
-        // Check if profile already exists (created by trigger)
-        const { data: existingProfile } = await supabase
+        const { data: profile } = await supabase
           .from("profiles")
           .select("id")
           .eq("id", authData.user.id)
           .single()
 
-        // If profile doesn't exist, try to create it
-        if (!existingProfile) {
-          // Refresh session to ensure we have auth context
-          const { data: sessionData } = await supabase.auth.getSession()
-          
-          if (sessionData.session) {
-            const { error: profileError } = await supabase.from("profiles").insert({
+        if (!profile) {
+          // Try to create profile manually if trigger didn't work
+          const { error: profileError } = await supabase
+            .from("profiles")
+            .insert({
               id: authData.user.id,
-              email,
-              full_name: fullName,
-              group_id: groupId,
+              user_id: userId.trim(),
+              nickname: nickname.trim(),
+              group_id: group.id,
             })
 
-            if (profileError) {
-              // If insert fails, check if it was created by trigger in the meantime
-              const { data: checkProfile } = await supabase
-                .from("profiles")
-                .select("id")
-                .eq("id", authData.user.id)
-                .single()
-              
-              if (!checkProfile) {
-                throw profileError
-              }
-              // Profile exists now, continue
-            }
-          } else {
-            // No session yet, but trigger should have created it
-            // Wait a bit more and check again
-            await new Promise(resolve => setTimeout(resolve, 1000))
-            const { data: finalCheck } = await supabase
-              .from("profiles")
-              .select("id")
-              .eq("id", authData.user.id)
-              .single()
-            
-            if (!finalCheck) {
-              throw new Error("프로필이 생성되지 않았습니다. 다시 시도하거나 지원팀에 문의하세요.")
-            }
+          if (profileError) {
+            throw new Error("프로필 생성 실패")
+          }
+        } else {
+          // Update profile with nickname if it already exists
+          const { error: updateError } = await supabase
+            .from("profiles")
+            .update({ nickname: nickname.trim() })
+            .eq("id", authData.user.id)
+
+          if (updateError) {
+            console.error("Failed to update nickname:", updateError)
           }
         }
       }
 
-      router.push("/auth/sign-up-success")
+      router.push("/dashboard")
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "오류가 발생했습니다")
     } finally {
@@ -258,31 +146,19 @@ export default function SignUpPage() {
         <Card>
           <CardHeader className="text-center">
             <CardTitle className="text-3xl font-bold text-amber-900">챌린지에 참여하기</CardTitle>
-            <CardDescription className="text-amber-700">계정을 만들어 추적을 시작하세요</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSignUp}>
               <div className="flex flex-col gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="fullName">이름</Label>
+                  <Label htmlFor="userId">ID (영어로 입력해주세요)</Label>
                   <Input
-                    id="fullName"
+                    id="userId"
                     type="text"
-                    placeholder="이름을 입력하세요"
+                    placeholder="ID를 입력하세요"
                     required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="email">이메일</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="이메일을 입력하세요"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    value={userId}
+                    onChange={(e) => setUserId(e.target.value)}
                   />
                 </div>
                 <div className="grid gap-2">
@@ -296,29 +172,33 @@ export default function SignUpPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="group">그룹 선택</Label>
-                  {isLoadingGroups ? (
-                    <div className="flex h-9 w-full items-center justify-center rounded-md border border-input bg-transparent px-3 py-2 text-sm">
-                      그룹 불러오는 중...
-                    </div>
-                  ) : (
-                    <Select value={selectedGroupName} onValueChange={setSelectedGroupName} required>
-                      <SelectTrigger id="group" className="w-full">
-                        <SelectValue placeholder="그룹을 선택하세요" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {predefinedGroups.map((groupName) => (
-                          <SelectItem key={groupName} value={groupName}>
-                            {groupName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
+                  <Label htmlFor="nickname">닉네임</Label>
+                  <Input
+                    id="nickname"
+                    type="text"
+                    placeholder="대시보드에 표시될 닉네임을 입력하세요"
+                    required
+                    value={nickname}
+                    onChange={(e) => setNickname(e.target.value)}
+                  />
                 </div>
-                {groupError && <p className="text-sm text-amber-600">{groupError}</p>}
+                <div className="grid gap-2">
+                  <Label htmlFor="groupName">그룹명</Label>
+                  <Select value={groupName} onValueChange={setGroupName} required>
+                    <SelectTrigger id="groupName" className="w-full">
+                      <SelectValue placeholder="그룹명을 선택하세요" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GROUP_NAMES.map((name) => (
+                        <SelectItem key={name} value={name}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 {error && <p className="text-sm text-red-600">{error}</p>}
-                <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700" disabled={isLoading || isLoadingGroups}>
+                <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700" disabled={isLoading}>
                   {isLoading ? "계정 생성 중..." : "회원가입"}
                 </Button>
               </div>

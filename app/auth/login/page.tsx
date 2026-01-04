@@ -7,62 +7,16 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState, useEffect } from "react"
+import { useState } from "react"
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("")
+  const [userId, setUserId] = useState("")
   const [password, setPassword] = useState("")
-  const [groupName, setGroupName] = useState("")
-  const [groups, setGroups] = useState<{ id: string; name: string }[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
-
-  useEffect(() => {
-    const fetchGroups = async () => {
-      const supabase = createClient()
-      try {
-        const { data, error: fetchError } = await supabase
-          .from("groups")
-          .select("id, name")
-          .order("name", { ascending: true })
-
-        if (fetchError) {
-          console.error("Error fetching groups:", fetchError)
-          return
-        }
-
-        if (data && data.length > 0) {
-          // Filter to only show Group 1-5 if they exist
-          const filteredGroups = data.filter((group) => {
-            const groupName = group.name.trim()
-            return groupName === "Group 1" || 
-                   groupName === "Group 2" || 
-                   groupName === "Group 3" || 
-                   groupName === "Group 4" || 
-                   groupName === "Group 5"
-          })
-          
-          // Sort to ensure Group 1-5 appear in order
-          const sortedGroups = filteredGroups.sort((a, b) => {
-            const numA = parseInt(a.name.replace("Group ", ""))
-            const numB = parseInt(b.name.replace("Group ", ""))
-            return numA - numB
-          })
-          
-          if (sortedGroups.length > 0) {
-            setGroups(sortedGroups)
-          }
-        }
-      } catch (err) {
-        console.error("Error in fetchGroups:", err)
-      }
-    }
-    fetchGroups()
-  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,49 +24,41 @@ export default function LoginPage() {
     setIsLoading(true)
     setError(null)
 
-    if (!groupName) {
-      setError("Please select a group")
+    if (!userId.trim()) {
+      setError("ID를 입력해주세요")
       setIsLoading(false)
       return
     }
 
     try {
+      // Verify user exists with this ID
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("user_id")
+        .eq("user_id", userId.trim())
+        .single()
+
+      if (profileError || !profile) {
+        throw new Error("ID 또는 비밀번호가 올바르지 않습니다")
+      }
+
+      // Generate email identifier for Supabase auth
+      const email = `${userId.trim().toLowerCase()}@challenge.local`
+
+      // Sign in
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
       
-      if (authError) throw authError
-
-      // Verify user belongs to the selected group
-      if (authData.user) {
-        // Find the selected group's ID
-        const selectedGroup = groups.find(g => g.name === groupName)
-        
-        if (!selectedGroup) {
-          await supabase.auth.signOut()
-          throw new Error("Selected group not found")
-        }
-
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("group_id")
-          .eq("id", authData.user.id)
-          .single()
-
-        if (profileError) throw profileError
-
-        // Compare group IDs directly
-        if (!profile || profile.group_id !== selectedGroup.id) {
-          await supabase.auth.signOut()
-          throw new Error("User does not belong to the selected group")
-        }
+      if (authError) {
+        throw new Error("ID 또는 비밀번호가 올바르지 않습니다")
       }
 
       router.push("/dashboard")
       router.refresh()
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred")
+      setError(error instanceof Error ? error.message : "오류가 발생했습니다")
     } finally {
       setIsLoading(false)
     }
@@ -129,14 +75,14 @@ export default function LoginPage() {
             <form onSubmit={handleLogin}>
               <div className="flex flex-col gap-6">
                 <div className="grid gap-2">
-                  <Label htmlFor="email">이메일</Label>
+                  <Label htmlFor="userId">ID</Label>
                   <Input
-                    id="email"
-                    type="email"
-                    placeholder="your@email.com"
+                    id="userId"
+                    type="text"
+                    placeholder="ID를 입력하세요"
                     required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    value={userId}
+                    onChange={(e) => setUserId(e.target.value)}
                   />
                 </div>
                 <div className="grid gap-2">
@@ -148,21 +94,6 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="group">Group Name</Label>
-                  <Select value={groupName} onValueChange={setGroupName} required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="소속 조를 선택해주세요." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {groups.map((group) => (
-                        <SelectItem key={group.id} value={group.name}>
-                          {group.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
                 {error && <p className="text-sm text-red-600">{error}</p>}
                 <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700" disabled={isLoading}>
