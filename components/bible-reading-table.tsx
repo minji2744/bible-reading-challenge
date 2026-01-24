@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { BookMarked } from "lucide-react"
+import { BookMarked, ChevronDown } from "lucide-react"
 
 type ChapterReading = {
   book: string
@@ -162,6 +162,17 @@ export function BibleReadingTable({ userId }: { userId: string }) {
   const [isLoading, setIsLoading] = useState(true)
   const [thisMonthCount, setThisMonthCount] = useState(0)
   const [thisWeekCount, setThisWeekCount] = useState(0)
+  const [expandedBooks, setExpandedBooks] = useState<Set<string>>(new Set())
+
+  const toggleBook = (bookName: string) => {
+    const newExpanded = new Set(expandedBooks)
+    if (newExpanded.has(bookName)) {
+      newExpanded.delete(bookName)
+    } else {
+      newExpanded.add(bookName)
+    }
+    setExpandedBooks(newExpanded)
+  }
 
   // Fetch all readings for this user
   useEffect(() => {
@@ -320,36 +331,51 @@ export function BibleReadingTable({ userId }: { userId: string }) {
           {isLoading ? (
             <p className="text-center text-sm text-muted-foreground">로딩 중...</p>
           ) : (
-            <div className="space-y-8 overflow-x-auto">
+            <div className="space-y-4 overflow-x-auto">
               {bibleChapters.map((book) => (
-              <div key={book.book}>
-                <h3 className="mb-3 font-semibold text-amber-900">{getKoreanBookName(book.book)}</h3>
-                <div className="flex flex-wrap gap-2">
-                  {Array.from({ length: book.chapters }, (_, i) => i + 1).map((chapter) => {
-                    const key = `${book.book}:${chapter}`
-                    const count = readings.get(key) || 0
-                    const isRead = count > 0
+              <div key={book.book} className="border rounded-lg">
+                <button
+                  onClick={() => toggleBook(book.book)}
+                  className="w-full flex items-center justify-between p-4 hover:bg-amber-50 transition-colors"
+                >
+                  <h3 className="font-semibold text-amber-900">{getKoreanBookName(book.book)}</h3>
+                  <ChevronDown
+                    className={`h-5 w-5 text-amber-900 transition-transform ${
+                      expandedBooks.has(book.book) ? "transform rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                
+                {expandedBooks.has(book.book) && (
+                  <div className="px-4 pb-4 border-t">
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      {Array.from({ length: book.chapters }, (_, i) => i + 1).map((chapter) => {
+                        const key = `${book.book}:${chapter}`
+                        const count = readings.get(key) || 0
+                        const isRead = count > 0
 
-                    return (
-                      <button
-                        key={chapter}
-                        onClick={() => handleChapterClick(book.book, chapter)}
-                        className={`relative h-12 w-12 flex items-center justify-center rounded-lg font-semibold text-sm transition-all hover:scale-105 active:scale-95 ${
-                          isRead
-                            ? "bg-green-500 text-white shadow-md hover:bg-green-600"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        }`}
-                      >
-                        {chapter}
-                        {isRead && (
-                          <span className="absolute bottom-1 right-1 text-xs font-bold bg-white text-green-600 rounded-full w-4 h-4 flex items-center justify-center">
-                            {count}
-                          </span>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
+                        return (
+                          <button
+                            key={chapter}
+                            onClick={() => handleChapterClick(book.book, chapter)}
+                            className={`relative h-12 w-12 flex items-center justify-center rounded-lg font-semibold text-sm transition-all hover:scale-105 active:scale-95 ${
+                              isRead
+                                ? "bg-green-500 text-white shadow-md hover:bg-green-600"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            }`}
+                          >
+                            {chapter}
+                            {isRead && (
+                              <span className="absolute bottom-1 right-1 text-xs font-bold bg-white text-green-600 rounded-full w-4 h-4 flex items-center justify-center">
+                                {count}
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
