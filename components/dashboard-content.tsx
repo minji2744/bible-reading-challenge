@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Progress } from "@/components/ui/progress"
 import { createClient } from "@/lib/supabase/client"
+import { BibleReadingTable } from "@/components/bible-reading-table"
+import { MonthlyLeaderboard } from "@/components/monthly-leaderboard"
 import {
   Sidebar,
   SidebarContent,
@@ -43,13 +44,6 @@ type GroupMember = {
   total_chapters: number
 }
 
-type GroupProgress = {
-  group_id: string
-  group_name: string
-  total_chapters: number
-  member_count: number
-}
-
 type Reading = {
   id: string
   chapters_read: number
@@ -70,13 +64,7 @@ export function DashboardContent({
   userTotal: number
 }) {
   const [activeTab, setActiveTab] = useState("reading")
-  const [chaptersRead, setChaptersRead] = useState("")
-  const [selectedBook, setSelectedBook] = useState("")
-  const [selectedChapterNumber, setSelectedChapterNumber] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([])
-  const [allGroupsProgress, setAllGroupsProgress] = useState<GroupProgress[]>([])
   const [isLoadingGroup, setIsLoadingGroup] = useState(false)
   const router = useRouter()
 
@@ -157,63 +145,6 @@ export function DashboardContent({
     router.refresh()
   }
 
-  const handleSubmitReading = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
-    setError(null)
-
-    const supabase = createClient()
-    const today = new Date().toISOString().split("T")[0]
-
-    try {
-      const chapters = Number.parseInt(chaptersRead)
-      if (isNaN(chapters) || chapters <= 0) {
-        throw new Error("올바른 장 수를 입력하세요")
-      }
-
-      if (!selectedBook || !selectedChapterNumber) {
-        throw new Error("성경 장을 선택하세요")
-      }
-
-      const startChapter = Number.parseInt(selectedChapterNumber)
-      const { error } = await supabase.from("readings").upsert(
-        {
-          user_id: user.id,
-          chapters_read: chapters,
-          reading_date: today,
-          book: selectedBook,
-          start_chapter: startChapter,
-        },
-        {
-          onConflict: "user_id,reading_date",
-        },
-      )
-
-      if (error) throw error
-
-      setChaptersRead("")
-      setSelectedBook("")
-      setSelectedChapterNumber("")
-      
-      // Refresh the page data
-      router.refresh()
-      
-      // Update group status and total status after registering a reading
-      // This ensures the data is fresh when users view those tabs
-      // Call them in parallel for better performance, without showing loading indicator
-      const refreshPromises = []
-      if (profile?.group_id) {
-        refreshPromises.push(fetchGroupMembers(false))
-      }
-      refreshPromises.push(fetchAllGroupsProgress(false))
-      await Promise.all(refreshPromises)
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
   const fetchGroupMembers = async (showLoading = true) => {
     if (!profile?.group_id) return
 
@@ -274,131 +205,9 @@ export function DashboardContent({
     }
   }
 
-  const fetchAllGroupsProgress = async (showLoading = true) => {
-    if (showLoading) setIsLoadingGroup(true)
-    const supabase = createClient()
-    const currentDate = new Date()
-    const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
-    const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
-
-    try {
-      // First, fetch all groups - always show all groups regardless of members or readings
-      const { data: groups, error: groupsError } = await supabase
-        .from("groups")
-        .select("id, group_name")
-
-      if (groupsError) {
-        console.error("Error fetching groups:", groupsError)
-        setAllGroupsProgress([])
-        return
-      }
-
-      if (!groups || groups.length === 0) {
-        setAllGroupsProgress([])
-        return
-      }
-
-      // Initialize all groups with 0 values
-      const memberCounts: Record<string, number> = {}
-      const readingTotals: Record<string, number> = {}
-      groups.forEach((group) => {
-        memberCounts[group.id] = 0
-        readingTotals[group.id] = 0
-      })
-
-      // Fetch all profiles to count members per group (non-blocking - if it fails, use 0)
-      try {
-        const { data: profiles, error: profilesError } = await supabase
-          .from("profiles")
-          .select("id, group_id")
-
-        if (profilesError) {
-          console.error("Error fetching profiles:", profilesError)
-        } else if (profiles) {
-          // Count actual members
-          profiles.forEach((profile: any) => {
-            if (profile.group_id && memberCounts.hasOwnProperty(profile.group_id)) {
-              memberCounts[profile.group_id] = (memberCounts[profile.group_id] || 0) + 1
-            }
-          })
-        }
-      } catch (err) {
-        console.error("Error processing profiles:", err)
-        // Continue with 0 member counts
-      }
-
-      // Fetch readings for the current month (non-blocking - if it fails, use 0)
-      try {
-        // First, get all user IDs that have profiles with group_id
-        const { data: profilesWithGroups, error: profilesError } = await supabase
-          .from("profiles")
-          .select("id, group_id")
-          .not("group_id", "is", null)
-
-        if (profilesError) {
-          console.error("Error fetching profiles for readings:", profilesError)
-          // Continue with 0 reading totals
-        } else if (profilesWithGroups && profilesWithGroups.length > 0) {
-          // Create a map of user_id to group_id
-          const userIdToGroupId: Record<string, string> = {}
-          profilesWithGroups.forEach((profile: any) => {
-            if (profile.id && profile.group_id) {
-              userIdToGroupId[profile.id] = profile.group_id
-            }
-          })
-
-          // Now fetch readings for these users
-          const { data: readings, error: readingsError } = await supabase
-            .from("readings")
-            .select("user_id, chapters_read")
-            .in("user_id", Object.keys(userIdToGroupId))
-            .gte("reading_date", firstDay.toISOString().split("T")[0])
-            .lte("reading_date", lastDay.toISOString().split("T")[0])
-
-          if (readingsError) {
-            console.error("Error fetching readings:", readingsError)
-            // Continue with 0 reading totals
-          } else if (readings && readings.length > 0) {
-            // Add actual reading totals
-            readings.forEach((reading: any) => {
-              const groupId = userIdToGroupId[reading.user_id]
-              if (groupId && readingTotals.hasOwnProperty(groupId)) {
-                readingTotals[groupId] = (readingTotals[groupId] || 0) + (reading.chapters_read || 0)
-              }
-            })
-          }
-        }
-        // If no profiles with groups or no readings, readingTotals already initialized to 0
-      } catch (err) {
-        console.error("Error processing readings:", err)
-        // Continue with 0 reading totals - don't throw error
-      }
-
-      // Combine all groups with their member counts and reading totals
-      // This ensures ALL groups are shown, even with 0 members and 0 chapters
-      const allGroups: GroupProgress[] = groups.map((group) => ({
-        group_id: group.id,
-        group_name: group.group_name,
-        total_chapters: readingTotals[group.id] ?? 0,
-        member_count: memberCounts[group.id] ?? 0,
-      }))
-
-      // Sort by total chapters (descending)
-      setAllGroupsProgress(allGroups.sort((a, b) => b.total_chapters - a.total_chapters))
-    } catch (err) {
-      console.error("Error fetching groups progress:", err)
-      setAllGroupsProgress([])
-    } finally {
-      if (showLoading) setIsLoadingGroup(false)
-    }
-  }
-
   useEffect(() => {
     if (activeTab === "group" && groupMembers.length === 0 && profile?.group_id) {
       fetchGroupMembers()
-    }
-    if (activeTab === "all-groups" && allGroupsProgress.length === 0) {
-      fetchAllGroupsProgress()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, profile?.group_id])
@@ -407,9 +216,6 @@ export function DashboardContent({
     month: "long",
     year: "numeric",
   })
-
-  // Get the most recent reading with book and chapter info
-  const mostRecentReading = userReadings.find((r) => r.book && r.start_chapter)
 
   // Function to get Korean book name
   const getKoreanBookName = (bookName: string): string => {
@@ -566,143 +372,9 @@ export function DashboardContent({
                 <TabsTrigger value="all-groups">모든 그룹</TabsTrigger>
               </TabsList>
 
-              {/* Tab 1: Log Reading */}
+              {/* Tab 1: Bible Reading Table */}
               <TabsContent value="reading" className="space-y-6">
-                <div className="grid gap-6 md:grid-cols-2">
-                  <Card className="border-amber-200">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-amber-900">
-                        <BookMarked className="h-5 w-5" />
-                        오늘의 읽기 기록
-                      </CardTitle>
-                      <CardDescription>성경책을 선택하고 읽은 장 수를 기록하세요</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <form onSubmit={handleSubmitReading} className="space-y-4">
-                        <div className="grid gap-2">
-                          <Label htmlFor="book">성경 책</Label>
-                          <Select
-                            value={selectedBook}
-                            onValueChange={(value) => {
-                              setSelectedBook(value)
-                              setSelectedChapterNumber("") // Reset chapter when book changes
-                            }}
-                            required
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="책을 선택하세요" />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-[300px]">
-                              {bibleChapters.map((book) => (
-                                <SelectItem key={book.book} value={book.book}>
-                                  {getKoreanBookName(book.book)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="grid gap-2">
-                          <Label htmlFor="chapter">몇 장부터 읽기 시작하셨나요?</Label>
-                          <Select
-                            value={selectedChapterNumber}
-                            onValueChange={setSelectedChapterNumber}
-                            required
-                            disabled={!selectedBook}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={selectedBook ? "장을 선택하세요" : "먼저 책을 선택하세요"} />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-[300px]">
-                              {selectedBook &&
-                                Array.from(
-                                  { length: bibleChapters.find((b) => b.book === selectedBook)?.chapters || 0 },
-                                  (_, i) => i + 1,
-                                ).map((chapter) => (
-                                  <SelectItem key={chapter} value={chapter.toString()}>
-                                    {chapter}장
-                                  </SelectItem>
-                                ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="grid gap-2">
-                          <Label htmlFor="chapters">읽은 장 수</Label>
-                          <Input
-                            id="chapters"
-                            type="number"
-                            min="1"
-                            placeholder="0"
-                            value={chaptersRead}
-                            onChange={(e) => setChaptersRead(e.target.value)}
-                            required
-                          />
-                        </div>
-                        {error && <p className="text-sm text-red-600">{error}</p>}
-                        <Button
-                          type="submit"
-                          className="w-full bg-amber-600 hover:bg-amber-700"
-                          disabled={isSubmitting}
-                        >
-                          {isSubmitting ? "저장 중..." : "읽기 저장"}
-                        </Button>
-                      </form>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-amber-200">
-                    <CardHeader>
-                      <CardTitle className="text-amber-900">이번 달 진행 상황</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-center">
-                        <p className="text-6xl font-bold text-amber-600">{userTotal}</p>
-                        <p className="mt-2 text-sm text-muted-foreground">읽은 장 수</p>
-                        {mostRecentReading && mostRecentReading.book && mostRecentReading.start_chapter && (
-                          <div className="mt-4 rounded-lg bg-amber-50 p-4">
-                            <p className="text-sm font-medium text-amber-900">
-                              {getKoreanBookName(mostRecentReading.book)} {mostRecentReading.start_chapter}장 부터{" "}
-                              {mostRecentReading.start_chapter + mostRecentReading.chapters_read - 1}장까지 읽으셨네요! 잘하셨습니다!
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <Card className="border-amber-200">
-                  <CardHeader>
-                    <CardTitle className="text-amber-900">최근 읽기 기록</CardTitle>
-                    <CardDescription>지난 7일 활동</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {userReadings.length > 0 ? (
-                      <div className="space-y-2">
-                        {userReadings.slice(0, 7).map((reading) => (
-                          <div
-                            key={reading.id}
-                            className="flex items-center justify-between rounded-lg border border-amber-100 bg-white p-3"
-                          >
-                            <span className="text-sm text-muted-foreground">
-                              {new Date(reading.reading_date).toLocaleDateString("ko-KR", {
-                                weekday: "short",
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </span>
-                            <span className="font-semibold text-amber-600">
-                              {reading.chapters_read}장
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-center text-sm text-muted-foreground">
-                        아직 기록된 읽기가 없습니다. 오늘부터 기록을 시작하세요!
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
+                <BibleReadingTable userId={user.id} />
               </TabsContent>
 
               {/* Tab 2: My Group */}
@@ -759,63 +431,9 @@ export function DashboardContent({
                 </Card>
               </TabsContent>
 
-              {/* Tab 3: All Groups */}
+              {/* Tab 3: Monthly Leaderboard */}
               <TabsContent value="all-groups" className="space-y-6">
-                <Card className="border-amber-200">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-amber-900">
-                      <Trophy className="h-5 w-5" />
-                      모든 그룹 리더보드
-                    </CardTitle>
-                    <CardDescription>{currentMonth} 그룹 순위</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {isLoadingGroup ? (
-                      <p className="text-center text-sm text-muted-foreground">로딩 중...</p>
-                    ) : allGroupsProgress.length > 0 ? (
-                      <div className="space-y-4">
-                        {allGroupsProgress.map((group, index) => (
-                          <div
-                            key={group.group_id}
-                            className="flex items-center justify-between rounded-lg border border-amber-100 bg-white p-4"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div
-                                className={`flex h-8 w-8 items-center justify-center rounded-full font-bold ${
-                                  index === 0
-                                    ? "bg-amber-500 text-white"
-                                    : index === 1
-                                      ? "bg-amber-300 text-amber-900"
-                                      : index === 2
-                                        ? "bg-amber-200 text-amber-900"
-                                        : "bg-gray-100 text-gray-600"
-                                }`}
-                              >
-                                {index + 1}
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="font-medium text-amber-900">
-                                  {group.group_name}
-                                  {group.group_id === profile?.group_id && " (내 그룹)"}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  멤버 {group.member_count}명
-                                </span>
-                              </div>
-                            </div>
-                            <span className="text-lg font-bold text-amber-600">
-                              {group.total_chapters}장
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-center text-sm text-muted-foreground">
-                        그룹이 없습니다.
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
+                <MonthlyLeaderboard userGroupId={profile?.group_id} />
               </TabsContent>
             </Tabs>
           </main>
