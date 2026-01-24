@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS public.readings (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   book TEXT,
   start_chapter INTEGER,
-  UNIQUE(user_id, reading_date)
+  UNIQUE(user_id, reading_date, book, start_chapter),
+  CONSTRAINT unique_user_date_book_chapter UNIQUE(user_id, reading_date, book, start_chapter)
 );
 
 -- Enable Row Level Security
