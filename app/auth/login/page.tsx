@@ -96,6 +96,11 @@ export default function LoginPage() {
                   />
                 </div>
                 {error && <p className="text-sm text-red-600">{error}</p>}
+                <div className="text-right">
+                  <Link href="/auth/reset-password" className="text-sm text-amber-700 hover:text-amber-900 underline underline-offset-4">
+                    비밀번호를 잊으셨나요?
+                  </Link>
+                </div>
                 <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700" disabled={isLoading}>
                   {isLoading ? "로그인 중..." : "로그인"}
                 </Button>
