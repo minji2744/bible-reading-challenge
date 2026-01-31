@@ -2,23 +2,25 @@
 
 import type React from "react"
 
-import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useState } from "react"
 
 export default function ResetPasswordPage() {
   const [userId, setUserId] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const router = useRouter()
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
     setIsLoading(true)
     setError(null)
     setSuccess(false)
@@ -29,31 +31,47 @@ export default function ResetPasswordPage() {
       return
     }
 
+    if (!password.trim()) {
+      setError("비밀번호를 입력해주세요")
+      setIsLoading(false)
+      return
+    }
+
+    if (password.length < 6) {
+      setError("비밀번호는 최소 6자 이상이어야 합니다")
+      setIsLoading(false)
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setError("비밀번호가 일치하지 않습니다")
+      setIsLoading(false)
+      return
+    }
+
     try {
-      // Verify user exists with this ID
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("user_id")
-        .eq("user_id", userId.trim())
-        .single()
-
-      if (profileError || !profile) {
-        throw new Error("해당 ID로 등록된 사용자를 찾을 수 없습니다")
-      }
-
-      // Generate email identifier for Supabase auth
-      const email = `${userId.trim().toLowerCase()}@challenge.local`
-
-      // Send password reset email
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/reset-password/confirm`,
+      const response = await fetch("/api/reset-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: userId.trim(),
+          newPassword: password,
+        }),
       })
 
-      if (resetError) {
-        throw new Error("비밀번호 재설정 이메일 전송에 실패했습니다")
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "비밀번호 재설정에 실패했습니다")
       }
 
       setSuccess(true)
+      // Redirect to login after 2 seconds
+      setTimeout(() => {
+        router.push("/auth/login")
+      }, 2000)
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "오류가 발생했습니다")
     } finally {
@@ -73,17 +91,12 @@ export default function ResetPasswordPage() {
               <div className="flex flex-col gap-6">
                 <div className="text-center space-y-2">
                   <p className="text-sm text-green-600">
-                    비밀번호 재설정 링크가 이메일로 전송되었습니다.
+                    비밀번호가 성공적으로 변경되었습니다.
                   </p>
                   <p className="text-sm text-gray-600">
-                    이메일을 확인하고 링크를 클릭하여 새 비밀번호를 설정해주세요.
+                    로그인 페이지로 이동합니다...
                   </p>
                 </div>
-                <Link href="/auth/login">
-                  <Button className="w-full bg-amber-600 hover:bg-amber-700">
-                    로그인 페이지로 돌아가기
-                  </Button>
-                </Link>
               </div>
             ) : (
               <form onSubmit={handleResetPassword}>
@@ -99,9 +112,33 @@ export default function ResetPasswordPage() {
                       onChange={(e) => setUserId(e.target.value)}
                     />
                   </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="password">새 비밀번호</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="새 비밀번호를 입력하세요"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      minLength={6}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="confirmPassword">비밀번호 확인</Label>
+                    <Input
+                      id="confirmPassword"
+                      type="password"
+                      placeholder="비밀번호를 다시 입력하세요"
+                      required
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      minLength={6}
+                    />
+                  </div>
                   {error && <p className="text-sm text-red-600">{error}</p>}
                   <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700" disabled={isLoading}>
-                    {isLoading ? "전송 중..." : "재설정 링크 전송"}
+                    {isLoading ? "변경 중..." : "비밀번호 변경"}
                   </Button>
                 </div>
                 <div className="mt-4 text-center text-sm">
